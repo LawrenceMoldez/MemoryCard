@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Card Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card-inner {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.4s;
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem;
+        }
+
+        .card-front {
+            background-color: white;
+            transform: rotateY(180deg);
+            padding: 0.5rem;
+        }
+
+        .card-back {
+            background: linear-gradient(135deg, #3b82f6, #1e40af);
+            color: white;
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+
+        .card-front img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 0.25rem;
+        }
+
+        .matched {
+            opacity: 0.7;
+            filter: brightness(0.9);
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold mb-2">Memory Game</h1>
+        <p class="text-lg mb-4">Match pairs of cards to win!</p>
+        <div class="flex justify-center items-center gap-8">
+            <div class="bg-gray-800 px-4 py-2 rounded-lg">
+                <span class="text-yellow-400">Moves:</span> <span id="moves">0</span>
+            </div>
+            <div class="bg-gray-800 px-4 py-2 rounded-lg">
+                <span class="text-green-400">Matches:</span> <span id="matches">0</span>/<span id="total-pairs">6</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8" id="game-board">
+        <!-- Cards will be generated here by JavaScript -->
+    </div>
+
+    <div id="win-message" class="hidden fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center">
+        <div class="bg-gray-800 p-8 rounded-lg max-w-md text-center">
+            <h2 class="text-3xl font-bold mb-4 text-green-400">You Win!</h2>
+            <p class="mb-6">You completed the game in <span id="final-moves">0</span> moves!</p>
+            <button id="restart-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <div class="flex gap-4">
+        <button id="hint-btn" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium">
+            Hint (3 left)
+        </button>
+        <button id="reset-btn" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium">
+            Restart Game
+        </button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameBoard = document.getElementById('game-board');
+            const movesDisplay = document.getElementById('moves');
+            const matchesDisplay = document.getElementById('matches');
+            const totalPairsDisplay = document.getElementById('total-pairs');
+            const winMessage = document.getElementById('win-message');
+            const finalMoves = document.getElementById('final-moves');
+            const restartBtn = document.getElementById('restart-btn');
+            const hintBtn = document.getElementById('hint-btn');
+            const resetBtn = document.getElementById('reset-btn');
+
+            let cards = [];
+            let flippedCards = [];
+            let matchedPairs = 0;
+            let moves = 0;
+            let canFlip = true;
+            let hintsLeft = 3;
+
+            // Replace these with your image paths
+            const symbols = [
+                'image/ang.jpg',
+                'image/clark.jpg',
+                'image/moldez.jpg',
+                'image/singson.jpg',
+                'image/yase.jpg',
+                'image/tum.jpg'
+            ];
+            
+            const cardValues = [...symbols, ...symbols];
+
+            totalPairsDisplay.textContent = symbols.length;
+
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            function createCards() {
+                gameBoard.innerHTML = '';
+                const shuffledCards = shuffleArray([...cardValues]);
+
+                shuffledCards.forEach((imagePath, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-transparent w-20 h-28 md:w-24 md:h-32 rounded-lg perspective cursor-pointer transition-transform duration-200 hover:scale-105';
+                    card.setAttribute('data-symbol', imagePath);
+                    card.setAttribute('data-index', index);
+
+                    card.innerHTML = `
+                        <div class="card-inner">
+                            <div class="card-face card-back">?</div>
+                            <div class="card-face card-front">
+                                <img src="${imagePath}" alt="Memory card image">
+                            </div>
+                        </div>
+                    `;
+
+                    card.addEventListener('click', flipCard);
+                    cards.push(card);
+                    gameBoard.appendChild(card);
+                });
+            }
+
+            function flipCard() {
+                if (!canFlip || this.classList.contains('matched') || flippedCards.includes(this)) return;
+
+                this.classList.add('flipped');
+                flippedCards.push(this);
+
+                if (flippedCards.length === 2) {
+                    moves++;
+                    movesDisplay.textContent = moves;
+                    canFlip = false;
+                    setTimeout(() => {
+                        checkForMatch();
+                    }, 600);
+                }
+            }
+
+            function unflipCards() {
+                if (flippedCards.length !== 2) return;
+
+                flippedCards.forEach(card => {
+                    card.classList.remove('flipped');
+                });
+
+                setTimeout(() => {
+                    flippedCards = [];
+                    canFlip = true;
+                }, 600);
+            }
+
+            function checkForMatch() {
+                const [card1, card2] = flippedCards;
+
+                if (card1.dataset.symbol === card2.dataset.symbol) {
+                    card1.classList.add('matched');
+                    card2.classList.add('matched');
+                    card1.removeEventListener('click', flipCard);
+                    card2.removeEventListener('click', flipCard);
+
+                    flippedCards = [];
+                    canFlip = true;
+
+                    matchedPairs++;
+                    matchesDisplay.textContent = matchedPairs;
+
+                    if (matchedPairs === symbols.length) {
+                        setTimeout(() => {
+                            winMessage.classList.remove('hidden');
+                            finalMoves.textContent = moves;
+                        }, 500);
+                    }
+                } else {
+                    setTimeout(unflipCards, 1000);
+                }
+            }
+
+            function giveHint() {
+                if (hintsLeft <= 0) return;
+
+                const unpairedCards = cards.filter(card =>
+                    !card.classList.contains('matched') &&
+                    !flippedCards.includes(card)
+                );
+
+                if (unpairedCards.length === 0) return;
+
+                const hintCard = unpairedCards[Math.floor(Math.random() * unpairedCards.length)];
+                const pairSymbol = hintCard.dataset.symbol;
+                const pairCard = cards.find(card =>
+                    card !== hintCard &&
+                    card.dataset.symbol === pairSymbol &&
+                    !card.classList.contains('matched') &&
+                    !flippedCards.includes(card)
+                );
+
+                if (!pairCard) return;
+
+                [hintCard, pairCard].forEach(card => {
+                    card.classList.add('ring-4', 'ring-yellow-400');
+                    setTimeout(() => {
+                        card.classList.remove('ring-4', 'ring-yellow-400');
+                    }, 1500);
+                });
+
+                hintsLeft--;
+                hintBtn.textContent = `Hint (${hintsLeft} left)`;
+
+                if (hintsLeft === 0) {
+                    hintBtn.disabled = true;
+                    hintBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+            }
+
+            function resetGame() {
+                cards = [];
+                flippedCards = [];
+                matchedPairs = 0;
+                moves = 0;
+                hintsLeft = 3;
+                canFlip = true;
+
+                movesDisplay.textContent = '0';
+                matchesDisplay.textContent = '0';
+                hintBtn.textContent = `Hint (3 left)`;
+                hintBtn.disabled = false;
+                hintBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                winMessage.classList.add('hidden');
+
+                createCards();
+            }
+
+            hintBtn.addEventListener('click', giveHint);
+            resetBtn.addEventListener('click', resetGame);
+            restartBtn.addEventListener('click', resetGame);
+
+            resetGame();
+        });
+    </script>
+</body>
+</html>
